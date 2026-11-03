@@ -4,13 +4,6 @@ I convert IEEE 754 double precision Floats to their shortest decimal representat
 Ulf Adams. 2018. Ryū: fast float-to-string conversion. PLDI 2018. https://doi.org/10.1145/3192366.3192369
 Reference implementation: https://github.com/ulfjack/ryu (this is a port of d2s.c, full table variant).
 
-The output is the shortest digit string that reads back to exactly the same Float; when several such strings exist, the one closest to the exact binary value is chosen, with ties rounded half to even like the C reference.
-Float>>#printString rounds such ties half up, so both differ in the last digit for a few values, e.g. 2.98023223876953125e-8: '2.9802322387695312e-8' here, '2.9802322387695313e-8' for printString. Both are shortest and read back to the same Float.
-
-Two output formats are provided:
-- Pharo format, identical to Float>>#printString (e.g. '0.1', '100.0', '1.0e23', 'Float nan')
-- Ryu scientific format, identical to d2s() from the C reference implementation (e.g. '1E-1', '1E2', '1E23', 'NaN')
-
 Examples:
 	RyuPrinter print: 0.1.          ""'0.1'""
 	RyuPrinter scientific: 1.0e23.  ""'1E23'""
@@ -19,18 +12,10 @@ Examples:
 	(RyuPrinter new decompose: 123.456; yourself) digits. ""123456""
 
 The tables of powers of 5 are built in class initialization from exact integer arithmetic, and stored as 28-bit limbs so that the 128-bit multiplications of the reference implementation only use SmallIntegers.
-
-Instance Variables
-	digits:	<Integer> decimal significand of the last decomposed Float
-	exponent:	<Integer> power of ten of the last decomposed Float, value = digits * (10 raisedTo: exponent)
 "
 Class {
 	#name : 'RyuPrinter',
-	#superclass : 'Object',
-	#instVars : [
-		'digits',
-		'exponent'
-	],
+	#superclass : 'ShortestFloatPrinter',
 	#classVars : [
 		'Pow5InvSplit',
 		'Pow5Split'
@@ -61,63 +46,6 @@ RyuPrinter class >> initializeTables [
 		i < 326 ifTrue: [ Pow5Split at: i + 1 put: (self limbsOf: (pow5 bitShift: 125 - bitLength)) ].
 		Pow5InvSplit at: i + 1 put: (self limbsOf: (1 bitShift: bitLength - 1 + 125) // pow5 + 1).
 		pow5 := pow5 * 5 ]
-]
-
-{ #category : 'class initialization' }
-RyuPrinter class >> limbsOf: anInteger [
-	"Answer the five 28-bit limbs of anInteger < 2^140, least significant first"
-
-	^ (0 to: 4) collect: [ :i | (anInteger bitShift: i * -28) bitAnd: 16rFFFFFFF ]
-]
-
-{ #category : 'printing' }
-RyuPrinter class >> print: aFloat [
-	"Answer the shortest decimal representation of aFloat, formatted like Float>>#printString"
-
-	^ String new: 24 streamContents: [ :stream | self new print: aFloat on: stream ]
-]
-
-{ #category : 'printing' }
-RyuPrinter class >> print: aFloat on: aStream [
-
-	self new print: aFloat on: aStream
-]
-
-{ #category : 'printing' }
-RyuPrinter class >> scientific: aFloat [
-	"Answer the shortest decimal representation of aFloat, formatted like d2s() of the Ryu C library"
-
-	^ String new: 24 streamContents: [ :stream | self new printScientific: aFloat on: stream ]
-]
-
-{ #category : 'private' }
-RyuPrinter >> decimalLength: anInteger [
-
-	| length power |
-	length := 1.
-	power := 10.
-	[ anInteger >= power ] whileTrue: [
-		length := length + 1.
-		power := power * 10 ].
-	^ length
-]
-
-{ #category : 'converting' }
-RyuPrinter >> decompose: aFloat [
-	"Set digits and exponent to the shortest decimal representation of the absolute value of aFloat.
-	aFloat must be finite."
-
-	| high ieeeExponent ieeeMantissa |
-	high := aFloat basicAt: 1.
-	ieeeExponent := (high bitShift: -20) bitAnd: 16r7FF.
-	ieeeExponent = 16r7FF ifTrue: [ ^ self error: 'Cannot decompose NaN or infinite Float' ].
-	ieeeMantissa := ((high bitAnd: 16rFFFFF) bitShift: 32) + (aFloat basicAt: 2).
-	(ieeeExponent = 0 and: [ ieeeMantissa = 0 ]) ifTrue: [
-		digits := 0.
-		exponent := 0.
-		^ self ].
-	(self decomposeSmallIntegerMantissa: ieeeMantissa exponent: ieeeExponent) ifTrue: [ ^ self ].
-	self decomposeMantissa: ieeeMantissa exponent: ieeeExponent
 ]
 
 { #category : 'private' }
@@ -236,61 +164,6 @@ RyuPrinter >> decomposeMantissa: ieeeMantissa exponent: ieeeExponent [
 ]
 
 { #category : 'private' }
-RyuPrinter >> decomposeSmallIntegerMantissa: ieeeMantissa exponent: ieeeExponent [
-	"Fast path for integral values in [1, 2^53), d2d_small_int() in d2s.c.
-	Answer whether the receiver handled the value."
-
-	| m2 e2 quotient |
-	e2 := ieeeExponent - 1023 - 52.
-	(e2 > 0 or: [ e2 < -52 ]) ifTrue: [ ^ false ].
-	m2 := ieeeMantissa + 16r10000000000000.
-	(m2 bitAnd: (1 bitShift: e2 negated) - 1) = 0 ifFalse: [ ^ false ].
-	digits := m2 bitShift: e2.
-	exponent := 0.
-	"Small integers may have trailing decimal zeros"
-	[ digits - ((quotient := digits // 10) * 10) = 0 ] whileTrue: [
-		digits := quotient.
-		exponent := exponent + 1 ].
-	^ true
-]
-
-{ #category : 'accessing' }
-RyuPrinter >> digitString [
-	"Answer the decimal digits of the last decomposed Float"
-
-	| string value quotient |
-	string := String new: (self decimalLength: digits).
-	value := digits.
-	string size to: 1 by: -1 do: [ :index |
-		quotient := value // 10.
-		string at: index put: (Character value: value - (quotient * 10) + 48).
-		value := quotient ].
-	^ string
-]
-
-{ #category : 'accessing' }
-RyuPrinter >> digits [
-	"Answer the decimal significand of the last decomposed Float"
-
-	^ digits
-]
-
-{ #category : 'accessing' }
-RyuPrinter >> digits: aDigits exponent: anExponent [
-	"Set the decimal value to print with #printDecimalOn:, value = aDigits * (10 raisedTo: anExponent)"
-
-	digits := aDigits.
-	exponent := anExponent
-]
-
-{ #category : 'accessing' }
-RyuPrinter >> exponent [
-	"Answer the power of ten of the last decomposed Float"
-
-	^ exponent
-]
-
-{ #category : 'private' }
 RyuPrinter >> mulShift: m limbs: limbs shift: shift [
 	"Answer (m * multiplier) >> shift, where multiplier < 2^140 is given as five 28-bit limbs.
 	This replaces the 64x128-bit multiplication of mulShift64() in d2s.c. Splitting m < 2^56 into
@@ -336,69 +209,4 @@ RyuPrinter >> pow5Factor: anInteger [
 		value := quotient.
 		count := count + 1 ].
 	^ count
-]
-
-{ #category : 'printing' }
-RyuPrinter >> print: aFloat on: aStream [
-	"Print aFloat on aStream using the same format as Float>>#printOn:"
-
-	aFloat isNaN ifTrue: [ ^ aStream nextPutAll: 'Float nan' ].
-	aFloat isInfinite ifTrue: [
-		aStream nextPutAll: 'Float infinity'.
-		^ aFloat > 0 ifFalse: [ aStream nextPutAll: ' negated' ] ].
-	aFloat signBit = 1 ifTrue: [ aStream nextPut: $- ].
-	aFloat = 0.0 ifTrue: [ ^ aStream nextPutAll: '0.0' ].
-	self
-		decompose: aFloat;
-		printDecimalOn: aStream
-]
-
-{ #category : 'printing' }
-RyuPrinter >> printDecimalOn: aStream [
-	"Print the last decomposed Float with the layout of Float>>#absPrintExactlyOn:base:
-	fixed notation when the decimal point lies within 3 places before or 6 places after the first digit,
-	scientific notation otherwise."
-
-	| string size pointPosition |
-	string := self digitString.
-	size := string size.
-	pointPosition := size + exponent.
-	(pointPosition between: -3 and: 6) ifFalse: [
-		aStream nextPut: string first; nextPut: $..
-		size = 1
-			ifTrue: [ aStream nextPut: $0 ]
-			ifFalse: [ aStream next: size - 1 putAll: string startingAt: 2 ].
-		aStream nextPut: $e.
-		^ pointPosition - 1 printOn: aStream ].
-	pointPosition <= 0 ifTrue: [
-		aStream nextPutAll: '0.'.
-		pointPosition negated timesRepeat: [ aStream nextPut: $0 ].
-		^ aStream nextPutAll: string ].
-	pointPosition >= size ifTrue: [
-		aStream nextPutAll: string.
-		pointPosition - size timesRepeat: [ aStream nextPut: $0 ].
-		^ aStream nextPutAll: '.0' ].
-	aStream
-		next: pointPosition putAll: string startingAt: 1;
-		nextPut: $.;
-		next: size - pointPosition putAll: string startingAt: pointPosition + 1
-]
-
-{ #category : 'printing' }
-RyuPrinter >> printScientific: aFloat on: aStream [
-	"Print aFloat on aStream using the format of d2s() from the Ryu C library"
-
-	| string |
-	aFloat isNaN ifTrue: [ ^ aStream nextPutAll: 'NaN' ].
-	aFloat signBit = 1 ifTrue: [ aStream nextPut: $- ].
-	aFloat isInfinite ifTrue: [ ^ aStream nextPutAll: 'Infinity' ].
-	self decompose: aFloat.
-	string := self digitString.
-	aStream nextPut: string first.
-	string size > 1 ifTrue: [
-		aStream
-			nextPut: $.;
-			next: string size - 1 putAll: string startingAt: 2 ].
-	aStream nextPut: $E.
-	exponent + string size - 1 printOn: aStream
 ]

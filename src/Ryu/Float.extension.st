@@ -20,3 +20,10 @@ Float >> ryuScientificString [
 
 	^ RyuPrinter scientific: self
 ]
+
+{ #category : '*Ryu' }
+Float >> schubfachPrintString [
+	"Answer the shortest decimal representation of the receiver, formatted like #printString, using the Schubfach algorithm"
+
+	^ SchubfachPrinter print: self
+]
