@@ -1,0 +1,7 @@
+*.image
+*.changes
+*.sources
+pharo-local/
+PharoDebug.log
+crash.dmp
+.DS_Store
