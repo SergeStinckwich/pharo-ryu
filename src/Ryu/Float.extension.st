@@ -27,3 +27,10 @@ Float >> schubfachPrintString [
 
 	^ SchubfachPrinter print: self
 ]
+
+{ #category : '*Ryu' }
+Float >> dragonboxPrintString [
+	"Answer the shortest decimal representation of the receiver, formatted like #printString, using the Dragonbox algorithm"
+
+	^ DragonboxPrinter print: self
+]

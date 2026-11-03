@@ -1,7 +1,7 @@
 "
-I compare the speed of RyuPrinter and SchubfachPrinter with the default Float>>#printString of Pharo (exact Burger & Dybvig algorithm) and with the inexact print policy.
+I compare the speed of RyuPrinter, SchubfachPrinter and DragonboxPrinter with the default Float>>#printString of Pharo (exact Burger & Dybvig algorithm) and with the inexact print policy.
 
-The first table times complete conversions to a String, the second one only the shortest decimal computation (#decompose:), without the formatting shared by both printers.
+The first table times complete conversions to a String, the second one only the shortest decimal computation (#decompose:), without the formatting shared by all printers.
 
 	RyuBenchmark run. ""answers a report and shows it on the Transcript""
 	RyuBenchmark new size: 5000; repetitions: 3; run.
@@ -66,15 +66,27 @@ RyuBenchmark >> nanosecondsPerFloat: aBlock on: floats [
 ]
 
 { #category : 'printing' }
+RyuBenchmark >> labelOf: aPrinterClass [
+
+	^ aPrinterClass name copyReplaceAll: 'Printer' with: ''
+]
+
+{ #category : 'printing' }
 RyuBenchmark >> print: anInteger on: aStream [
 
-	aStream nextPutAll: (anInteger printString padLeftTo: 12)
+	aStream nextPutAll: (anInteger printString padLeftTo: 13)
 ]
 
 { #category : 'printing' }
 RyuBenchmark >> printSpeedup: aNumber on: aStream [
 
-	aStream nextPutAll: ((aNumber printShowingDecimalPlaces: 1) , 'x' padLeftTo: 12)
+	aStream nextPutAll: ((aNumber printShowingDecimalPlaces: 1) , 'x' padLeftTo: 13)
+]
+
+{ #category : 'accessing' }
+RyuBenchmark >> printers [
+
+	^ { RyuPrinter. SchubfachPrinter. DragonboxPrinter }
 ]
 
 { #category : 'datasets' }
@@ -111,8 +123,8 @@ RyuBenchmark >> run [
 			nextPutAll: ' floats)';
 			cr.
 		stream nextPutAll: ('dataset' padRightTo: 22).
-		#( 'printString' 'inexact' 'Ryu' 'Schubfach' 'Ryu x' 'Schubfach x' ) do: [ :each |
-			stream nextPutAll: (each padLeftTo: 12) ].
+		#( 'printString' 'inexact' ) , (self printers collect: [ :each | self labelOf: each ]) , #( 'Dragonbox x' )
+			do: [ :each | stream nextPutAll: (each padLeftTo: 13) ].
 		stream cr.
 		datasets do: [ :each | self runPrinting: each value label: each key on: stream ].
 		stream
@@ -120,7 +132,8 @@ RyuBenchmark >> run [
 			nextPutAll: 'Shortest decimal only (#decompose:), ns per conversion';
 			cr;
 			nextPutAll: ('dataset' padRightTo: 22).
-		#( 'Ryu' 'Schubfach' 'Schubfach x' ) do: [ :each | stream nextPutAll: (each padLeftTo: 12) ].
+		(self printers collect: [ :each | self labelOf: each ]) , #( 'vs Ryu' 'vs Schubfach' )
+			do: [ :each | stream nextPutAll: (each padLeftTo: 13) ].
 		stream cr.
 		datasets do: [ :each | self runDecomposing: each value label: each key on: stream ] ].
 	Transcript show: report; cr.
@@ -129,37 +142,37 @@ RyuBenchmark >> run [
 
 { #category : 'running' }
 RyuBenchmark >> runDecomposing: floats label: aString on: aStream [
+	"Print the times of the printers, then the speedups of Dragonbox over Ryu and Schubfach"
 
-	| ryuPrinter schubfachPrinter ryu schubfach |
-	ryuPrinter := RyuPrinter new.
-	schubfachPrinter := SchubfachPrinter new.
-	ryu := self nanosecondsPerFloat: [ :float | ryuPrinter decompose: float ] on: floats.
-	schubfach := self nanosecondsPerFloat: [ :float | schubfachPrinter decompose: float ] on: floats.
+	| times |
+	times := self printers collect: [ :printerClass |
+		         | printer |
+		         printer := printerClass new.
+		         self nanosecondsPerFloat: [ :float | printer decompose: float ] on: floats ].
 	aStream nextPutAll: (aString padRightTo: 22).
-	self print: ryu on: aStream.
-	self print: schubfach on: aStream.
-	self printSpeedup: ryu / schubfach on: aStream.
+	times do: [ :each | self print: each on: aStream ].
+	self printSpeedup: times first / times last on: aStream.
+	self printSpeedup: (times at: 2) / times last on: aStream.
 	aStream cr
 ]
 
 { #category : 'running' }
 RyuBenchmark >> runPrinting: floats label: aString on: aStream [
+	"Print the times of printString, of the inexact printing and of the printers, then the speedup of Dragonbox over printString"
 
-	| exact inexact ryu schubfach |
+	| exact inexact times |
 	exact := self nanosecondsPerFloat: [ :float | float printString ] on: floats.
 	inexact := self
 		           nanosecondsPerFloat: [ :float |
 		           String streamContents: [ :stream | float absPrintInexactlyOn: stream base: 10 ] ]
 		           on: (floats collect: [ :float | float abs ]).
-	ryu := self nanosecondsPerFloat: [ :float | RyuPrinter print: float ] on: floats.
-	schubfach := self nanosecondsPerFloat: [ :float | SchubfachPrinter print: float ] on: floats.
+	times := self printers collect: [ :printerClass |
+		         self nanosecondsPerFloat: [ :float | printerClass print: float ] on: floats ].
 	aStream nextPutAll: (aString padRightTo: 22).
 	self print: exact on: aStream.
 	self print: inexact on: aStream.
-	self print: ryu on: aStream.
-	self print: schubfach on: aStream.
-	self printSpeedup: exact / ryu on: aStream.
-	self printSpeedup: exact / schubfach on: aStream.
+	times do: [ :each | self print: each on: aStream ].
+	self printSpeedup: exact / times last on: aStream.
 	aStream cr
 ]
 

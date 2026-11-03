@@ -202,6 +202,25 @@ ShortestFloatPrinter >> printDecimalOn: aStream [
 		next: size - pointPosition putAll: string startingAt: pointPosition + 1
 ]
 
+{ #category : 'private' }
+ShortestFloatPrinter >> removeTrailingZeros [
+	"Remove the trailing decimal zeros of digits, which is not zero and has at most 17 digits"
+
+	| quotient |
+	[ (quotient := digits // 100000000) * 100000000 = digits ] whileTrue: [
+		digits := quotient.
+		exponent := exponent + 8 ].
+	(quotient := digits // 10000) * 10000 = digits ifTrue: [
+		digits := quotient.
+		exponent := exponent + 4 ].
+	(quotient := digits // 100) * 100 = digits ifTrue: [
+		digits := quotient.
+		exponent := exponent + 2 ].
+	(quotient := digits // 10) * 10 = digits ifTrue: [
+		digits := quotient.
+		exponent := exponent + 1 ]
+]
+
 { #category : 'printing' }
 ShortestFloatPrinter >> printScientific: aFloat on: aStream [
 	"Print aFloat on aStream using the format of d2s() from the Ryu C library"

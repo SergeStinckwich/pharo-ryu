@@ -136,25 +136,6 @@ SchubfachPrinter >> floorLog2Pow10: e [
 ]
 
 { #category : 'private' }
-SchubfachPrinter >> removeTrailingZeros [
-	"digits is not zero and has at most 17 digits"
-
-	| quotient |
-	[ (quotient := digits // 100000000) * 100000000 = digits ] whileTrue: [
-		digits := quotient.
-		exponent := exponent + 8 ].
-	(quotient := digits // 10000) * 10000 = digits ifTrue: [
-		digits := quotient.
-		exponent := exponent + 4 ].
-	(quotient := digits // 100) * 100 = digits ifTrue: [
-		digits := quotient.
-		exponent := exponent + 2 ].
-	(quotient := digits // 10) * 10 = digits ifTrue: [
-		digits := quotient.
-		exponent := exponent + 1 ]
-]
-
-{ #category : 'private' }
 SchubfachPrinter >> roundToOddMul: m limbs: limbs shift: shift [
 	"Answer (m * multiplier) >> shift, with its lowest bit set when some of the shifted out bits are not zero,
 	where multiplier < 2^140 is given as five 28-bit limbs. This is rop() in DoubleToDecimal.java.
